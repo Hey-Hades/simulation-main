@@ -9,7 +9,7 @@ from pygame.math import Vector2
 # =====================================================
 pygame.init()
 
-WIDTH, HEIGHT = 500, 800
+WIDTH, HEIGHT = 450, 800
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Black Hole Paint Bounce")
 clock = pygame.time.Clock()
@@ -22,9 +22,9 @@ CENTER = Vector2(WIDTH // 2, HEIGHT // 2)
 BLACK = (0, 0, 0)
 WHITE = (245, 245, 255)
 
-font_name = pygame.font.match_font('segoeui, helvetica, arial')
-title_font = pygame.font.Font(font_name, 28) if font_name else pygame.font.SysFont(None, 32)
-stats_font = pygame.font.Font(font_name, 22) if font_name else pygame.font.SysFont(None, 24)
+# Initialize your custom UI fonts here (outside the loop for performance)
+counter_font = pygame.font.SysFont(None, 40)
+watermark_font = pygame.font.SysFont('arial', 26)
 
 # =====================================================
 # ARENA, CANVAS & COVERAGE TRACKER
@@ -35,12 +35,11 @@ canvas = pygame.Surface((WIDTH, HEIGHT))
 canvas.fill(BLACK)
 pygame.draw.circle(canvas, WHITE, CENTER, CIRCLE_RADIUS)
 
-# Pixel-perfect grid resolution for hyper-accurate tracking
+# Pixel-perfect grid resolution for hyper-accurate internal tracking
 CELL_SIZE = 1
 fillable_cells = []
 painted_cells = set()
 
-# Static -1.0 margin aligns the grid with the visual inner edge
 for gy in range(0, HEIGHT, CELL_SIZE):
     for gx in range(0, WIDTH, CELL_SIZE):
         cell_center = Vector2(gx + CELL_SIZE / 2, gy + CELL_SIZE / 2)
@@ -92,12 +91,12 @@ def update_coverage(start_pos, end_pos, base_radius):
 
     for cy in range(min_y, max_y):
         for cx in range(min_x, max_x):
+            
             if (cx, cy) in painted_cells:
                 continue
             
             cell_pos = Vector2(cx * CELL_SIZE + CELL_SIZE / 2, cy * CELL_SIZE + CELL_SIZE / 2)
             
-            # Static boundary check: Guarantees we never paint outside the arena
             if cell_pos.distance_to(CENTER) > CIRCLE_RADIUS - 1.0:
                 continue
 
@@ -166,8 +165,8 @@ while running:
             draw_smooth_trail(canvas, ball_pos, next_pos, ball_radius)
             ball_pos = next_pos
 
-        # Extremely strict win condition requiring near-perfect coverage
-        if coverage >= 0.99999999999999999999:
+        # Internal tracking remains strictly mathematical
+        if coverage >= 0.9999999999:
             coverage = 1.0
             game_state = "FILLED"
 
@@ -175,7 +174,16 @@ while running:
     # RENDERING
     # =====================================================
     screen.blit(canvas, (0, 0))
+    hook_font = pygame.font.SysFont("arial", 25, bold=True)
 
+    hook_text = hook_font.render(
+    "HOW MANY BOUNCES UNTIL IT'S FULL?",
+    True,
+    (255, 255, 255)
+)
+
+    hook_rect = hook_text.get_rect(center=(WIDTH // 2, 65))
+    screen.blit(hook_text, hook_rect)
     if game_state == "PLAYING":
         hue = (pygame.time.get_ticks() * 0.08) % 360
         boundary_color = pygame.Color(0)
@@ -190,28 +198,28 @@ while running:
             width=thickness
         )
 
-    title_text = title_font.render("Not stopping until the circle", True, WHITE)
-    subtitle_text = title_font.render("is filled", True, WHITE)
+    # --- YOUR CUSTOM UI ---
     
-    bounces_text = stats_font.render(f"Bounces: {collision_count}", True, WHITE)
+    # Bounce Counter (Centered below the arena)
+    bounces_text = counter_font.render(f"Bounces: {collision_count}", True, (255, 255, 255))
+    bounces_rect = bounces_text.get_rect(
+        center=(WIDTH // 2, HEIGHT // 2 + CIRCLE_RADIUS + 40)
+    )
+    screen.blit(bounces_text, bounces_rect)
+
+    # Bounce Cult Watermark (Centered directly below the bounce counter)
+    part1 = watermark_font.render("@ B o u n c e ", True, (245, 245, 245))
+    part2 = watermark_font.render("C u l t", True, (255, 210, 70))
+
+    total_width = part1.get_width() + part2.get_width()
+    start_x = (WIDTH // 2) - (total_width // 2)
     
-    display_coverage = coverage if game_state == "FILLED" else min(coverage, 0.9999)
-    coverage_text = stats_font.render(f"Filled: {display_coverage * 100:.1f}%", True, WHITE)
-    
-    for text_surface, pos in [
-        (title_text, (WIDTH // 2, 70)),
-        (subtitle_text, (WIDTH // 2, 105)),
-        (bounces_text, (WIDTH // 2, HEIGHT - 100)),
-        (coverage_text, (WIDTH // 2, HEIGHT - 70)),
-    ]:
-        shadow = pygame.Surface(text_surface.get_size(), pygame.SRCALPHA)
-        shadow.blit(text_surface, (0, 0))
-        shadow.fill((0, 0, 0, 150), special_flags=pygame.BLEND_RGBA_MULT)
-        screen.blit(shadow, shadow.get_rect(center=(pos[0] + 2, pos[1] + 2)))
-        screen.blit(text_surface, text_surface.get_rect(center=pos))
+    # Places the watermark exactly 10 pixels below the bounce text
+    y_pos = bounces_rect.bottom + 10 
+
+    screen.blit(part1, (start_x, y_pos))
+    screen.blit(part2, (start_x + part1.get_width(), y_pos))
 
     pygame.display.flip()
 
 pygame.quit()
-
-# ican always change the paint bleed # himanshu sharma
