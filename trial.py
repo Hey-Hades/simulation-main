@@ -1,89 +1,126 @@
-import pygame
 import math
 import random
+
+import pygame
 from pygame.math import Vector2
 
 # =====================================================
 # INIT
 # =====================================================
 pygame.init()
-pygame.mixer.init(channels=8)
 
-WIDTH, HEIGHT = 90 * 4, 160 * 4
+WIDTH, HEIGHT = 500, 800
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Growing Ball Simulation")
+pygame.display.set_caption("Black Hole Paint Bounce")
 clock = pygame.time.Clock()
 
 CENTER = Vector2(WIDTH // 2, HEIGHT // 2)
 
 # =====================================================
-# SOUND
+# COLORS & FONTS
 # =====================================================
-import glob
+BLACK = (0, 0, 0)
+WHITE = (245, 245, 255)
 
-notes = []
-
-for file in sorted(glob.glob("sounds/notes/note_*.wav")):
-    try:
-        notes.append(pygame.mixer.Sound(file))
-    except Exception as e:
-        print(f"Failed to load {file}: {e}")
-
-# 8 channels for overlapping sounds
-channels = [pygame.mixer.Channel(i) for i in range(8)]
-
-note_index = 0
-channel_index = 0
-
-last_sound_time = 0
-
-# Optional burst sound
-try:
-    burst_sound = pygame.mixer.Sound("sounds/burst.wav")
-except:
-    burst_sound = None
+font_name = pygame.font.match_font('segoeui, helvetica, arial')
+title_font = pygame.font.Font(font_name, 28) if font_name else pygame.font.SysFont(None, 32)
+stats_font = pygame.font.Font(font_name, 22) if font_name else pygame.font.SysFont(None, 24)
 
 # =====================================================
-# COLORS (UPDATED TO SPIDER WEB AESTHETIC)
+# ARENA, CANVAS & COVERAGE TRACKER
 # =====================================================
-BG_COLOR = (0, 0, 0)           # Black background outside
-CIRCLE_COLOR = (255, 255, 255) # Filled white circle
-LINE_COLOR = (0, 0, 0)         # Black web lines
-BALL_COLOR = (200, 160, 255)    # Vibrant Lavender 
+CIRCLE_RADIUS = 210
 
-# =====================================================
-# GAME STATE & VARIABLES
-# =====================================================
-game_state = "PLAYING"
-particles = []
+canvas = pygame.Surface((WIDTH, HEIGHT))
+canvas.fill(BLACK)
+pygame.draw.circle(canvas, WHITE, CENTER, CIRCLE_RADIUS)
 
-CIRCLE_RADIUS = 165
-CIRCLE_THICKNESS = 0  # Changed to 0 so the circle fills in completely white
+# Pixel-perfect grid resolution for hyper-accurate tracking
+CELL_SIZE = 1
+fillable_cells = []
+painted_cells = set()
 
-ball_pos = Vector2(CENTER)
-ball_vel = Vector2(random.uniform(-420, 420), random.uniform(-420, 420))
+# Static -1.0 margin aligns the grid with the visual inner edge
+for gy in range(0, HEIGHT, CELL_SIZE):
+    for gx in range(0, WIDTH, CELL_SIZE):
+        cell_center = Vector2(gx + CELL_SIZE / 2, gy + CELL_SIZE / 2)
+        if cell_center.distance_to(CENTER) <= CIRCLE_RADIUS - 1.0:
+            fillable_cells.append((gx // CELL_SIZE, gy // CELL_SIZE))
 
-BALL_RADIUS = 4
-MAX_RADIUS = CIRCLE_RADIUS - 4
-
-GRAVITY = Vector2(0, 0)
-ELASTICITY = 0.995
-SPEED_BOOST = 1.02  
-MAX_SPEED = 7000    
+total_fillable_cells = len(fillable_cells)
+coverage = 0.0
 
 # =====================================================
-# EFFECTS
+# BALL & PHYSICS PARAMS
 # =====================================================
-camera_shake = 0
+ball_radius = 7.0
+MAX_BALL_RADIUS = 80.0    
+GROWTH_RATE = 2.6         
+PAINT_BLEED = 3.2        
+
+GRAVITY = 1500            
+MAX_SPEED = 2200          
+BOUNCE_BOOST = 1.01       
+
+# Initial Drop Sequence
+ball_pos = Vector2(CENTER.x + 40, CENTER.y - CIRCLE_RADIUS * 0.6)
+ball_vel = Vector2(0, 0) 
+
 collision_count = 0
-collision_lines = [] 
-sound_multiplier = 1.0
+game_state = "PLAYING"
 
 # =====================================================
-# EXACT 40-SECOND TIMERS
+# HELPER FUNCTIONS
 # =====================================================
-start_time = pygame.time.get_ticks()
-TOTAL_TIME_MS = 40000  # 40 seconds total for both filling and bursting
+def point_distance_to_segment(point, start, end):
+    segment = end - start
+    segment_length_sq = segment.length_squared()
+    if segment_length_sq == 0:
+        return point.distance_to(start)
+    amount = max(0.0, min(1.0, (point - start).dot(segment) / segment_length_sq))
+    closest = start + segment * amount
+    return point.distance_to(closest)
+
+def update_coverage(start_pos, end_pos, base_radius):
+    global coverage
+    paint_radius = base_radius + PAINT_BLEED
+    
+    min_x = max(0, int((min(start_pos.x, end_pos.x) - paint_radius) // CELL_SIZE))
+    max_x = min(WIDTH // CELL_SIZE, int((max(start_pos.x, end_pos.x) + paint_radius) // CELL_SIZE) + 1)
+    min_y = max(0, int((min(start_pos.y, end_pos.y) - paint_radius) // CELL_SIZE))
+    max_y = min(HEIGHT // CELL_SIZE, int((max(start_pos.y, end_pos.y) + paint_radius) // CELL_SIZE) + 1)
+
+    for cy in range(min_y, max_y):
+        for cx in range(min_x, max_x):
+            if (cx, cy) in painted_cells:
+                continue
+            
+            cell_pos = Vector2(cx * CELL_SIZE + CELL_SIZE / 2, cy * CELL_SIZE + CELL_SIZE / 2)
+            
+            # Static boundary check: Guarantees we never paint outside the arena
+            if cell_pos.distance_to(CENTER) > CIRCLE_RADIUS - 1.0:
+                continue
+
+            if point_distance_to_segment(cell_pos, start_pos, end_pos) <= paint_radius:
+                painted_cells.add((cx, cy))
+
+    coverage = len(painted_cells) / total_fillable_cells
+
+def draw_smooth_trail(surface, start, end, base_radius):
+    paint_radius = base_radius + PAINT_BLEED
+    
+    dist = start.distance_to(end)
+    if dist == 0:
+        pygame.draw.circle(surface, BLACK, (int(start.x), int(start.y)), int(paint_radius))
+        update_coverage(start, end, base_radius)
+        return
+
+    steps = int(dist) * 2 + 1 
+    for i in range(steps + 1):
+        interp_pos = start.lerp(end, i / steps)
+        pygame.draw.circle(surface, BLACK, (int(interp_pos.x), int(interp_pos.y)), int(paint_radius))
+    
+    update_coverage(start, end, base_radius)
 
 # =====================================================
 # MAIN LOOP
@@ -91,166 +128,87 @@ TOTAL_TIME_MS = 40000  # 40 seconds total for both filling and bursting
 running = True
 
 while running:
-    dt = min(clock.tick(60) / 1000, 0.1)
-    current_time = pygame.time.get_ticks()
-    elapsed_time = current_time - start_time
+    dt = min(clock.tick(60) / 1000, 0.05) 
 
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
 
-    # =================================================
-    # PLAYING STATE
-    # =================================================
     if game_state == "PLAYING":
         
-        # -------------------------------------------------
-        # NORMAL PHYSICS
-        # -------------------------------------------------
-        if elapsed_time < TOTAL_TIME_MS:
-            ball_vel += GRAVITY * dt
-            ball_pos += ball_vel * dt
+        if ball_radius < MAX_BALL_RADIUS:
+            ball_radius += GROWTH_RATE * dt
+            if ball_radius > MAX_BALL_RADIUS:
+                ball_radius = MAX_BALL_RADIUS
+
+        ball_vel.y += GRAVITY * dt
+        next_pos = ball_pos + ball_vel * dt
+
+        direction = next_pos - CENTER
+        distance = direction.length()
+        inner_limit = CIRCLE_RADIUS - ball_radius
+
+        if distance >= inner_limit:
+            collision_count += 1
+            normal = direction.normalize() if distance > 0 else Vector2(0, -1)
+            impact_pos = CENTER + normal * inner_limit 
             
-            direction = ball_pos - CENTER
-            distance = direction.length()
-
-            # COLLISION DETECTION
-            if distance + BALL_RADIUS >= CIRCLE_RADIUS:
-                collision_count += 1
-                
-                if distance > 0: normal = direction.normalize()
-                else: normal = Vector2(1, 0)
-
-                # Store Tether to inner circumference
-                wall_anchor = CENTER + normal * CIRCLE_RADIUS
-                collision_lines.append(Vector2(wall_anchor))
-
-                # TIMED GROWTH CURVE 
-                progress = min(1.0, elapsed_time / TOTAL_TIME_MS)
-                target_radius = 4 + (MAX_RADIUS - 4) * (progress ** 4)
-                
-                BALL_RADIUS = max(BALL_RADIUS + 0.1, target_radius)
-                BALL_RADIUS = min(BALL_RADIUS, MAX_RADIUS)
-
-                # Push inward
-                ball_pos = CENTER + normal * (CIRCLE_RADIUS - BALL_RADIUS - 1)
-                
-                # Bounce & Add Random Angle
-                ball_vel = ball_vel.reflect(normal) * ELASTICITY
-                ball_vel = ball_vel.rotate(random.uniform(-8, 8))
-
-                # Apply Speed Boost
-                ball_vel *= SPEED_BOOST     
-                if ball_vel.length() > MAX_SPEED:
-                    ball_vel.scale_to_length(MAX_SPEED)
-                    
-                    # Audio Throttled
-                # Audio Throttled
-                if current_time - last_sound_time > 15 and notes:
-                        impact_speed = min(1.0, ball_vel.length() / 900)
-
-                        sound_multiplier += 0.20
-                        volume = min(1.0, impact_speed * sound_multiplier)
-
-                        channel = channels[channel_index]
-
-                        channel.set_volume(volume)
-                        channel.play(notes[note_index])
-
-                        note_index = (note_index + 1) % len(notes)
-                        channel_index = (channel_index + 1) % len(channels)
-
-                        last_sound_time = current_time
+            draw_smooth_trail(canvas, ball_pos, impact_pos, ball_radius)
             
-        # MEMORY OPTIMIZATION
-        # -------------------------------------------------
-        if len(collision_lines) > 400:
-            collision_lines = collision_lines[-400:]
-
-        # =================================================
-        # END STATE (THE 40-SECOND BURST)
-        # =================================================
-        if elapsed_time >= TOTAL_TIME_MS:
-            game_state = "BURSTED"
-            camera_shake = 60  
-   
-
-            # 1. SPAWN BALL PARTICLES (Pink)
-            for _ in range(500):
-                angle = random.uniform(0, math.pi * 2)
-                speed = random.uniform(200, 2500) 
-                vel = Vector2(math.cos(angle), math.sin(angle)) * speed
-                particles.append({"pos": Vector2(ball_pos), "vel": vel, "radius": random.uniform(2, 8), "life": random.uniform(1.0, 3.5), "color": BALL_COLOR})
-
-            # 2. SPAWN CIRCLE PARTICLES (White)
-            for _ in range(600):
-                angle = random.uniform(0, math.pi * 2)
-                ring_pos = CENTER + Vector2(math.cos(angle), math.sin(angle)) * CIRCLE_RADIUS
-                speed = random.uniform(100, 1500) 
-                vel = Vector2(math.cos(angle), math.sin(angle)) * speed
-                particles.append({"pos": ring_pos, "vel": vel, "radius": random.uniform(2, 6), "life": random.uniform(1.0, 3.5), "color": CIRCLE_COLOR})
+            ball_vel = ball_vel.reflect(normal) * BOUNCE_BOOST
+            ball_vel = ball_vel.rotate(random.uniform(-4, 4))
             
-            collision_lines.clear()
-            ball_vel = Vector2(0, 0)
+            if ball_vel.length() > MAX_SPEED:
+                ball_vel.scale_to_length(MAX_SPEED)
+                
+            ball_pos = impact_pos
+        else:
+            draw_smooth_trail(canvas, ball_pos, next_pos, ball_radius)
+            ball_pos = next_pos
 
-    # =================================================
-    # UPDATE PARTICLES (IF BURSTED)
-    # =================================================
-    elif game_state == "BURSTED":
-        for p in particles:
-            p["vel"] += Vector2(0, 800) * dt # Gravity
-            p["pos"] += p["vel"] * dt
-            p["life"] -= dt
-        particles = [p for p in particles if p["life"] > 0]
+        # Extremely strict win condition requiring near-perfect coverage
+        if coverage >= 0.99999999999999999999:
+            coverage = 1.0
+            game_state = "FILLED"
 
-    # =================================================
-    # CAMERA SHAKE & DRAWING
-    # =================================================
-    camera_shake *= 0.9
-    offset_x = random.uniform(-camera_shake, camera_shake) if camera_shake > 0.5 else 0
-    offset_y = random.uniform(-camera_shake, camera_shake) if camera_shake > 0.5 else 0
-
-    screen.fill(BG_COLOR)
+    # =====================================================
+    # RENDERING
+    # =====================================================
+    screen.blit(canvas, (0, 0))
 
     if game_state == "PLAYING":
-        # Draw Filled White Circle
-        center_render = (int(CENTER.x + offset_x), int(CENTER.y + offset_y))
-        pygame.draw.circle(screen, CIRCLE_COLOR, center_render, CIRCLE_RADIUS, CIRCLE_THICKNESS)
+        hue = (pygame.time.get_ticks() * 0.08) % 360
+        boundary_color = pygame.Color(0)
+        boundary_color.hsla = (hue, 100, 50, 100)
+        
+        thickness = max(2, int(ball_radius * 0.12))
+        pygame.draw.circle(
+            screen, 
+            boundary_color, 
+            (int(ball_pos.x), int(ball_pos.y)), 
+            int(ball_radius), 
+            width=thickness
+        )
 
-        # Draw Black Lines
-        for anchor_pos in collision_lines:
-            pygame.draw.line(screen, LINE_COLOR, (int(anchor_pos.x + offset_x), int(anchor_pos.y + offset_y)), (int(ball_pos.x + offset_x), int(ball_pos.y + offset_y)), 1)
-
-        # Draw Pink Ball
-        ball_render = (int(ball_pos.x + offset_x), int(ball_pos.y + offset_y))
-        pygame.draw.circle(screen, BALL_COLOR, ball_render, int(BALL_RADIUS))
-
-    elif game_state == "BURSTED":
-        for p in particles:
-            r = int(p["radius"] * min(1.0, p["life"]))
-            if r > 0: pygame.draw.circle(screen, p["color"], (int(p["pos"].x + offset_x), int(p["pos"].y + offset_y)), r)
-
-    # =================================================
-    # UI
-    # =================================================
-    font = pygame.font.SysFont(None, 40)
-    watermark_font = pygame.font.SysFont(None, 24) 
+    title_text = title_font.render("Not stopping until the circle", True, WHITE)
+    subtitle_text = title_font.render("is filled", True, WHITE)
     
-    if game_state == "PLAYING":
-        # THE BOUNCE COUNTER 
-        bounces_text = font.render(f"Bounces: {collision_count}", True, (255, 255, 255))
-        bounces_rect = bounces_text.get_rect(center=(WIDTH // 2, HEIGHT // 2 - CIRCLE_RADIUS - 60))
-        screen.blit(bounces_text, bounces_rect)
-
-        # THE WATERMARK 
-        watermark_text = watermark_font.render("@BounceCult", True, (150, 150, 150))
-        # Placed dynamically inside/below the circle area
-        watermark_rect = watermark_text.get_rect(center=(WIDTH // 2, HEIGHT // 2 + CIRCLE_RADIUS + 40))
-        screen.blit(watermark_text, watermark_rect)
-        
-    else:
-        end_text = pygame.font.SysFont(None, 30).render("HIT SUBSCRIBE!!", True, (255, 50, 50))
-        screen.blit(end_text, end_text.get_rect(center=(WIDTH // 2, HEIGHT // 2)))
+    bounces_text = stats_font.render(f"Bounces: {collision_count}", True, WHITE)
+    
+    display_coverage = coverage if game_state == "FILLED" else min(coverage, 0.9999)
+    coverage_text = stats_font.render(f"Filled: {display_coverage * 100:.1f}%", True, WHITE)
+    
+    for text_surface, pos in [
+        (title_text, (WIDTH // 2, 70)),
+        (subtitle_text, (WIDTH // 2, 105)),
+        (bounces_text, (WIDTH // 2, HEIGHT - 100)),
+        (coverage_text, (WIDTH // 2, HEIGHT - 70)),
+    ]:
+        shadow = pygame.Surface(text_surface.get_size(), pygame.SRCALPHA)
+        shadow.blit(text_surface, (0, 0))
+        shadow.fill((0, 0, 0, 150), special_flags=pygame.BLEND_RGBA_MULT)
+        screen.blit(shadow, shadow.get_rect(center=(pos[0] + 2, pos[1] + 2)))
+        screen.blit(text_surface, text_surface.get_rect(center=pos))
 
     pygame.display.flip()
 
