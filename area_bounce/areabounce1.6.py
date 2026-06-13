@@ -9,7 +9,7 @@ from pygame.math import Vector2
 # =====================================================
 pygame.init()
 
-WIDTH, HEIGHT = 450, 800
+WIDTH, HEIGHT = 430,800
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Mauve & Cream Paint Bounce")
 clock = pygame.time.Clock()
@@ -180,10 +180,10 @@ while running:
     hook_text = hook_font.render(
         "HOW MANY BOUNCES UNTIL IT'S FULL?",
         True,
-        ARENA_COLOR  # Matches the cream arena
+        (245, 245, 245)  # Matches the cream arena
     )
 
-    hook_rect = hook_text.get_rect(center=(WIDTH // 2, 65))
+    hook_rect = hook_text.get_rect(center=(WIDTH // 2, 115))
     screen.blit(hook_text, hook_rect)
     
     if game_state == "PLAYING":
@@ -203,15 +203,15 @@ while running:
     # --- YOUR CUSTOM UI ---
     
     # Bounce Counter (Centered below the arena)
-    bounces_text = counter_font.render(f"Bounces: {collision_count}", True, ARENA_COLOR)
+    bounces_text = counter_font.render(f"Bounces: {collision_count}", True,(245, 245, 245))
     bounces_rect = bounces_text.get_rect(
         center=(WIDTH // 2, HEIGHT // 2 + CIRCLE_RADIUS + 40)
     )
     screen.blit(bounces_text, bounces_rect)
 
     # Bounce Cult Watermark (Centered directly below the bounce counter)
-    part1 = watermark_font.render("@ B o u n c e ", True, ARENA_COLOR) 
-    part2 = watermark_font.render("C u l t", True, (255, 225, 140))     # A slightly deeper, warm golden accent
+    part1 = watermark_font.render("@ B o u n c e ", True,(245, 245, 245)) 
+    part2 = watermark_font.render("C u l t", True, (255, 210, 70))     # A slightly deeper, warm golden accent
 
     total_width = part1.get_width() + part2.get_width()
     start_x = (WIDTH // 2) - (total_width // 2)

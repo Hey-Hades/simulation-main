@@ -1,3 +1,4 @@
+
 import math
 import random
 
@@ -9,22 +10,22 @@ from pygame.math import Vector2
 # =====================================================
 pygame.init()
 
-WIDTH, HEIGHT = 500, 800
+WIDTH, HEIGHT = 450, 800
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Black Hole Paint Bounce")
+pygame.display.set_caption("Cyber-Pastel Paint Bounce")
 clock = pygame.time.Clock()
 
 CENTER = Vector2(WIDTH // 2, HEIGHT // 2)
 
 # =====================================================
-# COLORS & FONTS
+# COLORS & FONTS (OPTION 2)
 # =====================================================
-BLACK = (0, 0, 0)
-WHITE = (245, 245, 255)
+PAINT_COLOR = (18, 30, 49)    # Dark Teal Void
+ARENA_COLOR = (255, 175, 204) # Bubblegum Pink Arena
 
-font_name = pygame.font.match_font('segoeui, helvetica, arial')
-title_font = pygame.font.Font(font_name, 28) if font_name else pygame.font.SysFont(None, 32)
-stats_font = pygame.font.Font(font_name, 22) if font_name else pygame.font.SysFont(None, 24)
+watermark_font = pygame.font.SysFont('arial', 26)
+font_small_text = pygame.font.SysFont("arial", 25, bold=True)
+font_large_text = pygame.font.SysFont("arial", 35, bold=True)
 
 # =====================================================
 # ARENA, CANVAS & COVERAGE TRACKER
@@ -32,15 +33,13 @@ stats_font = pygame.font.Font(font_name, 22) if font_name else pygame.font.SysFo
 CIRCLE_RADIUS = 210
 
 canvas = pygame.Surface((WIDTH, HEIGHT))
-canvas.fill(BLACK)
-pygame.draw.circle(canvas, WHITE, CENTER, CIRCLE_RADIUS)
+canvas.fill(PAINT_COLOR)
+pygame.draw.circle(canvas, ARENA_COLOR, CENTER, CIRCLE_RADIUS)
 
-# Pixel-perfect grid resolution for hyper-accurate tracking
 CELL_SIZE = 1
 fillable_cells = []
 painted_cells = set()
 
-# Static -1.0 margin aligns the grid with the visual inner edge
 for gy in range(0, HEIGHT, CELL_SIZE):
     for gx in range(0, WIDTH, CELL_SIZE):
         cell_center = Vector2(gx + CELL_SIZE / 2, gy + CELL_SIZE / 2)
@@ -62,7 +61,6 @@ GRAVITY = 1500
 MAX_SPEED = 2200          
 BOUNCE_BOOST = 1.01       
 
-# Initial Drop Sequence
 ball_pos = Vector2(CENTER.x + 40, CENTER.y - CIRCLE_RADIUS * 0.6)
 ball_vel = Vector2(0, 0) 
 
@@ -94,13 +92,9 @@ def update_coverage(start_pos, end_pos, base_radius):
         for cx in range(min_x, max_x):
             if (cx, cy) in painted_cells:
                 continue
-            
             cell_pos = Vector2(cx * CELL_SIZE + CELL_SIZE / 2, cy * CELL_SIZE + CELL_SIZE / 2)
-            
-            # Static boundary check: Guarantees we never paint outside the arena
             if cell_pos.distance_to(CENTER) > CIRCLE_RADIUS - 1.0:
                 continue
-
             if point_distance_to_segment(cell_pos, start_pos, end_pos) <= paint_radius:
                 painted_cells.add((cx, cy))
 
@@ -108,17 +102,16 @@ def update_coverage(start_pos, end_pos, base_radius):
 
 def draw_smooth_trail(surface, start, end, base_radius):
     paint_radius = base_radius + PAINT_BLEED
-    
     dist = start.distance_to(end)
     if dist == 0:
-        pygame.draw.circle(surface, BLACK, (int(start.x), int(start.y)), int(paint_radius))
+        pygame.draw.circle(surface, PAINT_COLOR, (int(start.x), int(start.y)), int(paint_radius))
         update_coverage(start, end, base_radius)
         return
 
     steps = int(dist) * 2 + 1 
     for i in range(steps + 1):
         interp_pos = start.lerp(end, i / steps)
-        pygame.draw.circle(surface, BLACK, (int(interp_pos.x), int(interp_pos.y)), int(paint_radius))
+        pygame.draw.circle(surface, PAINT_COLOR, (int(interp_pos.x), int(interp_pos.y)), int(paint_radius))
     
     update_coverage(start, end, base_radius)
 
@@ -135,7 +128,6 @@ while running:
             running = False
 
     if game_state == "PLAYING":
-        
         if ball_radius < MAX_BALL_RADIUS:
             ball_radius += GROWTH_RATE * dt
             if ball_radius > MAX_BALL_RADIUS:
@@ -166,8 +158,7 @@ while running:
             draw_smooth_trail(canvas, ball_pos, next_pos, ball_radius)
             ball_pos = next_pos
 
-        # Extremely strict win condition requiring near-perfect coverage
-        if coverage >= 0.99999999999999999999:
+        if coverage >= 0.9999999999:
             coverage = 1.0
             game_state = "FILLED"
 
@@ -175,40 +166,42 @@ while running:
     # RENDERING
     # =====================================================
     screen.blit(canvas, (0, 0))
+    
+    prefix_text = font_small_text.render("This video will get ", True, (255, 255, 255))
+    
+    if collision_count == 0:
+        k_text = font_large_text.render("? ", True, (189, 224, 254)) # Baby Blue
+    else:
+        k_text = font_large_text.render(f"{collision_count}K", True, (189, 224, 254)) 
+        
+    suffix_text = font_small_text.render(" likes", True, (255, 255, 255))
 
+    total_width = prefix_text.get_width() + k_text.get_width() + suffix_text.get_width()
+    start_x = (WIDTH - total_width) // 2
+    
+    screen.blit(prefix_text, (start_x, 120))
+    screen.blit(k_text, (start_x + prefix_text.get_width(), 110)) 
+    screen.blit(suffix_text, (start_x + prefix_text.get_width() + k_text.get_width(), 120))
+    
     if game_state == "PLAYING":
         hue = (pygame.time.get_ticks() * 0.08) % 360
         boundary_color = pygame.Color(0)
         boundary_color.hsla = (hue, 100, 50, 100)
-        
         thickness = max(2, int(ball_radius * 0.12))
         pygame.draw.circle(
-            screen, 
-            boundary_color, 
-            (int(ball_pos.x), int(ball_pos.y)), 
-            int(ball_radius), 
-            width=thickness
+            screen, boundary_color, (int(ball_pos.x), int(ball_pos.y)), 
+            int(ball_radius), width=thickness
         )
 
-    title_text = title_font.render("Not stopping until the circle", True, WHITE)
-    subtitle_text = title_font.render("is filled", True, WHITE)
-    
-    bounces_text = stats_font.render(f"Bounces: {collision_count}", True, WHITE)
-    
-    display_coverage = coverage if game_state == "FILLED" else min(coverage, 0.9999)
-    coverage_text = stats_font.render(f"Filled: {display_coverage * 100:.1f}%", True, WHITE)
-    
-    for text_surface, pos in [
-        (title_text, (WIDTH // 2, 70)),
-        (subtitle_text, (WIDTH // 2, 105)),
-        (bounces_text, (WIDTH // 2, HEIGHT - 100)),
-        (coverage_text, (WIDTH // 2, HEIGHT - 70)),
-    ]:
-        shadow = pygame.Surface(text_surface.get_size(), pygame.SRCALPHA)
-        shadow.blit(text_surface, (0, 0))
-        shadow.fill((0, 0, 0, 150), special_flags=pygame.BLEND_RGBA_MULT)
-        screen.blit(shadow, shadow.get_rect(center=(pos[0] + 2, pos[1] + 2)))
-        screen.blit(text_surface, text_surface.get_rect(center=pos))
+    part1 = watermark_font.render("@ B o u n c e ", True, (245, 245, 245))
+    part2 = watermark_font.render("C u l t", True, (205, 180, 219)) # Lilac
+
+    total_width = part1.get_width() + part2.get_width()
+    start_x = (WIDTH // 2) - (total_width // 2)
+    y_pos = HEIGHT // 2 + CIRCLE_RADIUS + 40
+
+    screen.blit(part1, (start_x, y_pos))
+    screen.blit(part2, (start_x + part1.get_width(), y_pos))
 
     pygame.display.flip()
 

@@ -180,7 +180,7 @@ while running:
     hook_text = hook_font.render(
         "HOW MANY BOUNCES UNTIL IT'S FULL?",
         True,
-        ARENA_COLOR  # Matches the warm parchment arena
+        (245, 245, 245)  # Matches the warm parchment arena
     )
 
     hook_rect = hook_text.get_rect(center=(WIDTH // 2, 65))
@@ -203,15 +203,15 @@ while running:
     # --- YOUR CUSTOM UI ---
     
     # Bounce Counter (Centered below the arena)
-    bounces_text = counter_font.render(f"Bounces: {collision_count}", True, ARENA_COLOR)
+    bounces_text = counter_font.render(f"Bounces: {collision_count}", True, (245, 245, 245))
     bounces_rect = bounces_text.get_rect(
         center=(WIDTH // 2, HEIGHT // 2 + CIRCLE_RADIUS + 40)
     )
     screen.blit(bounces_text, bounces_rect)
 
     # Bounce Cult Watermark (Centered directly below the bounce counter)
-    part1 = watermark_font.render("@ B o u n c e ", True, ARENA_COLOR) 
-    part2 = watermark_font.render("C u l t", True, (210, 190, 150))     # Antique brass/gold accent
+    part1 = watermark_font.render("@ B o u n c e ", True, (245, 245, 245)) 
+    part2 = watermark_font.render("C u l t", True, (255, 210, 70))     # Antique brass/gold accent
 
     total_width = part1.get_width() + part2.get_width()
     start_x = (WIDTH // 2) - (total_width // 2)
